@@ -10,11 +10,13 @@ class CompanySpider(scrapy.Spider):
     
     start_urls = [
         'https://eggforward.co.jp/',
+        'https://starup01.jp/',
         # 他の企業のURLを追加
     ]
 
     allowed_domains = [
         'eggforward.co.jp',
+        'starup01.jp',
         # 他の企業のドメインを追加
     ]
 
@@ -25,6 +27,7 @@ class CompanySpider(scrapy.Spider):
                 callback=self.parse,
                 meta={
                     "playwright": True,
+                    "playwright_include_page" : True,
                     "playwright_page_methods": [
                         PageMethod("wait_for_selector", "a[href]"),
                         PageMethod("evaluate", "window.scrollTo(0, document.body.scrollHeight)"),
@@ -81,7 +84,7 @@ class CompanySpider(scrapy.Spider):
                         "playwright_page_methods": [
                             PageMethod("wait_for_selector", "body"),
                             PageMethod("evaluate", "window.scrollTo(0, document.body.scrollHeight)"),
-                            PageMethod("wait_for_timeout", 1000),
+                            PageMethod("wait_for_timeout", 20000),
                         ],
                         "errback": self.errback,
                         # "dont_filter": True  # 必要に応じて
