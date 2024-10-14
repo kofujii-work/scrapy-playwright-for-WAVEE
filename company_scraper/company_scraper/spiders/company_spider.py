@@ -1,40 +1,45 @@
-# company_scraper/spiders/company_spider.py
-
 import scrapy
 from scrapy_playwright.page import PageMethod
-from company_scraper.items import CompanyTextItem  # アイテムをインポート
+from company_scraper.items import CompanyTextItem
 from urllib.parse import urljoin, urlparse
+
 
 class CompanySpider(scrapy.Spider):
     name = "company_spider"
     
-    start_urls = [
+    # 処理する企業のリスト
+    company_urls = [
         'https://eggforward.co.jp/',
-        # 'https://starup01.jp/',
+        'https://starup01.jp/',
         # 他の企業のURLを追加
     ]
-
+    
+    # 許可されたドメインのリスト
     allowed_domains = [
         'eggforward.co.jp',
-        # 'starup01.jp',
+        'starup01.jp',
         # 他の企業のドメインを追加
     ]
 
+    def __init__(self, *args, **kwargs):
+        super(CompanySpider, self).__init__(*args, **kwargs)
+        self.company_index = 0  # 現在処理中の企業のインデックス
+
     def start_requests(self):
-        for url in self.start_urls:
+        if self.company_index < len(self.company_urls):
+            url = self.company_urls[self.company_index]
             yield scrapy.Request(
                 url=url,
                 callback=self.parse,
                 meta={
                     "playwright": True,
-                    "playwright_include_page" : True,
+                    "playwright_include_page": True,
                     "playwright_page_methods": [
                         PageMethod("wait_for_selector", "a[href]"),
                         PageMethod("evaluate", "window.scrollTo(0, document.body.scrollHeight)"),
                         PageMethod("wait_for_timeout", 20000),
                     ],
                     "errback": self.errback,
-                    # "dont_filter": True  # 必要に応じて
                 }
             )
 
@@ -42,15 +47,14 @@ class CompanySpider(scrapy.Spider):
         # ページURLのログ出力（デバッグ用）
         self.logger.debug(f"スクレイピング中のURL: {response.url}")
 
-        # スクリプトやスタイルタグを除外せず、HTML全体を取得
-        html_content = response.text
-        
         # スクリプトやスタイルタグを除外したテキストを取得
-        page_text = response.xpath("//body//text()[not(ancestor::script) and not(ancestor::style) and not(ancestor::noscript) and not(ancestor::template) and not(ancestor::comment())]").getall()
+        page_text = response.xpath(
+            "//body//text()[not(ancestor::script) and not(ancestor::style) and not(ancestor::noscript) and not(ancestor::template) and not(ancestor::comment())]"
+        ).getall()
 
         # 不要な空白や改行を削除
         page_text = [text.strip() for text in page_text if text.strip()]
-        
+
         # テキストを一つの文字列に結合
         full_text = ' '.join(page_text)
 
@@ -58,7 +62,7 @@ class CompanySpider(scrapy.Spider):
         item = CompanyTextItem()
         item['url'] = response.url
         item['text'] = full_text
-        item['html'] = html_content  # HTML全体を保存
+        item['html'] = response.text  # HTML全体を保存
 
         yield item
 
@@ -87,10 +91,45 @@ class CompanySpider(scrapy.Spider):
                             PageMethod("wait_for_timeout", 20000),
                         ],
                         "errback": self.errback,
-                        # "dont_filter": True  # 必要に応じて
                     }
                 )
+
+        # 次の企業を処理
+        self.company_index += 1
+        if self.company_index < len(self.company_urls):
+            next_url = self.company_urls[self.company_index]
+            yield scrapy.Request(
+                url=next_url,
+                callback=self.parse,
+                meta={
+                    "playwright": True,
+                    "playwright_page_methods": [
+                        PageMethod("wait_for_selector", "body"),
+                        PageMethod("evaluate", "window.scrollTo(0, document.body.scrollHeight)"),
+                        PageMethod("wait_for_timeout", 20000),
+                    ],
+                    "errback": self.errback,
+                }
+            )
 
     async def errback(self, failure):
         # エラーハンドリング
         self.logger.error(f"リクエスト失敗: {repr(failure)}")
+        
+        # 次の企業を処理（エラーが発生しても次の企業へ）
+        self.company_index += 1
+        if self.company_index < len(self.company_urls):
+            next_url = self.company_urls[self.company_index]
+            yield scrapy.Request(
+                url=next_url,
+                callback=self.parse,
+                meta={
+                    "playwright": True,
+                    "playwright_page_methods": [
+                        PageMethod("wait_for_selector", "body"),
+                        PageMethod("evaluate", "window.scrollTo(0, document.body.scrollHeight)"),
+                        PageMethod("wait_for_timeout", 20000),
+                    ],
+                    "errback": self.errback,
+                }
+            )
