@@ -10,13 +10,13 @@ class CompanySpider(scrapy.Spider):
     
     start_urls = [
         'https://eggforward.co.jp/',
-        'https://starup01.jp/',
+        # 'https://starup01.jp/',
         # 他の企業のURLを追加
     ]
 
     allowed_domains = [
         'eggforward.co.jp',
-        'starup01.jp',
+        # 'starup01.jp',
         # 他の企業のドメインを追加
     ]
 
@@ -46,7 +46,7 @@ class CompanySpider(scrapy.Spider):
         html_content = response.text
         
         # スクリプトやスタイルタグを除外したテキストを取得
-        page_text = response.xpath("//body//text()[normalize-space()]").getall()
+        page_text = response.xpath("//body//text()[not(ancestor::script) and not(ancestor::style) and not(ancestor::noscript) and not(ancestor::template) and not(ancestor::comment())]").getall()
 
         # 不要な空白や改行を削除
         page_text = [text.strip() for text in page_text if text.strip()]
