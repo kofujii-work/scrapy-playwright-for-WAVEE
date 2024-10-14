@@ -10,7 +10,7 @@ class PostgresPipeline:
     @classmethod
     def from_crawler(cls, crawler):
         return cls(
-            postgres_config=crawler.settings.get('POSTGRESQL')
+            postgres_config=crawler.settings.get('POSTGRESQL')  # Scrapy設定からDB設定を取得
         )
 
     def open_spider(self, spider):
@@ -24,17 +24,22 @@ class PostgresPipeline:
             )
             self.cursor = self.connection.cursor()
             logging.info("PostgreSQLに接続しました。")
+
             # テーブルが存在しない場合は作成する
             create_table_query = """
-                CREATE TABLE IF NOT EXISTS company_texts (
+                CREATE TABLE IF NOT EXISTS scraped_homepage (
                     id SERIAL PRIMARY KEY,
+                    company_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
                     url TEXT UNIQUE NOT NULL,
-                    text TEXT NOT NULL
+                    text TEXT NOT NULL,
+                    html TEXT NOT NULL,
+                    scrape_time TIMESTAMP
                 );
             """
             self.cursor.execute(create_table_query)
             self.connection.commit()
-            logging.info("company_texts テーブルを確認しました。")
+            logging.info("scraped_homepage テーブルを確認しました。")
         except Exception as e:
             logging.error(f"PostgreSQLへの接続に失敗しました: {e}")
             raise e
@@ -47,8 +52,9 @@ class PostgresPipeline:
     def process_item(self, item, spider):
         try:
             self.cursor.execute("""
-                INSERT INTO company_texts (url, text, html) VALUES (%s, %s, %s)
-            """, (item['url'], item['text'], item['html']))
+                INSERT INTO scraped_homepage (company_id, name, url, text, html, scrape_time)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (item['company_id'], item['name'], item['url'], item['text'], item['html'], item['scrape_time']))
             self.connection.commit()
             return item
         except Exception as e:
