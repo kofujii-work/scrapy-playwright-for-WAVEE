@@ -5,14 +5,20 @@ from company_scraper.items import CompanyTextItem
 from urllib.parse import urljoin, urlparse
 from datetime import datetime
 
+
 class CompanySpider(scrapy.Spider):
     name = "company_spider"
 
     # データベース接続情報
-    DB_HOST = "localhost"  # ホスト名
-    DB_NAME = "company_db"  # データベース名
-    DB_USER = "postgres"  # ユーザー名
-    DB_PASSWORD = "Kou314F15926"  # パスワード
+    DB_HOST = "localhost"
+    DB_NAME = "company_db"
+    DB_USER = "postgres"
+    DB_PASSWORD = "Kou314F15926"
+
+    def __init__(self, *args, **kwargs):
+        super(CompanySpider, self).__init__(*args, **kwargs)
+        self.company_urls = []
+        self.allowed_domains = []
 
     def start_requests(self):
         # データベースに接続
@@ -32,14 +38,14 @@ class CompanySpider(scrapy.Spider):
         for company in companies:
             company_id, company_name, url = company
             domain = urlparse(url).netloc
+            self.company_urls.append(url)
+            self.allowed_domains.append(domain)
 
-            # クローリングリクエストの送信
+            # 各URLに対してリクエストを送信し、company_id と company_name を渡す
             yield scrapy.Request(
                 url=url,
                 callback=self.parse,
                 meta={
-                    "company_id": company_id,
-                    "company_name": company_name,
                     "playwright": True,
                     "playwright_include_page": True,
                     "playwright_page_methods": [
@@ -47,21 +53,13 @@ class CompanySpider(scrapy.Spider):
                         PageMethod("evaluate", "window.scrollTo(0, document.body.scrollHeight)"),
                         PageMethod("wait_for_timeout", 20000),
                     ],
+                    "company_id": company_id,  # company_id を渡す
+                    "company_name": company_name,  # company_name を渡す
                     "errback": self.errback,
                 }
             )
-        
-        # データベース接続を閉じる
-        cur.close()
-        conn.close()
 
     async def parse(self, response):
-        company_id = response.meta.get("company_id")
-        company_name = response.meta.get("company_name")
-
-        # データ取得日時
-        scrape_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
         # ページURLのログ出力（デバッグ用）
         self.logger.debug(f"スクレイピング中のURL: {response.url}")
 
@@ -76,14 +74,14 @@ class CompanySpider(scrapy.Spider):
         # テキストを一つの文字列に結合
         full_text = ' '.join(page_text)
 
-        # アイテムの生成: URL, 抽出されたテキスト、HTML全体、データ取得日時を保存
+        # アイテムの生成: URL, 抽出されたテキスト、HTML全体、company_id, company_name, scrape_time を保存
         item = CompanyTextItem()
-        item['company_id'] = company_id
-        item['name'] = company_name
         item['url'] = response.url
         item['text'] = full_text
-        item['html'] = response.text  # HTML全体を保存
-        item['scrape_time'] = scrape_time  # データ取得日時
+        item['html'] = response.text  # HTML全体を保存（ログには表示しない）
+        item['company_id'] = response.meta['company_id']
+        item['name'] = response.meta['company_name']  # company_name をアイテムに追加
+        item['scrape_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # 現在時刻をscrape_timeとして保存
 
         yield item
 
@@ -96,26 +94,26 @@ class CompanySpider(scrapy.Spider):
             absolute_url = urljoin(response.url, link)
 
             # URLを解析してホストを取得
-        parsed_url = urlparse(absolute_url)
-        host = parsed_url.netloc.lower()
+            parsed_url = urlparse(absolute_url)
+            host = parsed_url.netloc.lower()
 
-        # 動的にURLから取得したドメインに対してのみクローリングする
-        if host == urlparse(response.url).netloc:
-            yield scrapy.Request(
-                url=absolute_url,
-                callback=self.parse,
-                meta={
-                    "company_id": company_id,
-                    "company_name": company_name,
-                    "playwright": True,
-                    "playwright_page_methods": [
-                        PageMethod("wait_for_selector", "body"),
-                        PageMethod("evaluate", "window.scrollTo(0, document.body.scrollHeight)"),
-                        PageMethod("wait_for_timeout", 20000),
-                    ],
-                    "errback": self.errback,
-                }
-            )
+            # allowed_domains の全てをチェック
+            if any(host == domain.lower() or host.endswith('.' + domain.lower()) for domain in self.allowed_domains):
+                yield scrapy.Request(
+                    url=absolute_url,
+                    callback=self.parse,
+                    meta={
+                        "playwright": True,
+                        "company_id": response.meta['company_id'],  # 次のリクエストにも company_id を渡す
+                        "company_name": response.meta['company_name'],  # 次のリクエストにも company_name を渡す
+                        "playwright_page_methods": [
+                            PageMethod("wait_for_selector", "body"),
+                            PageMethod("evaluate", "window.scrollTo(0, document.body.scrollHeight)"),
+                            PageMethod("wait_for_timeout", 20000),
+                        ],
+                        "errback": self.errback,
+                    }
+                )
 
     async def errback(self, failure):
         # エラーハンドリング
